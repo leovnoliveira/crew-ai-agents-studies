@@ -152,8 +152,15 @@ td.num, th.num { text-align: right; }
       <div id="chTop" style="height:520px"></div>
     </div>
     <div class="card full">
-      <h2>Gasto por fatura</h2><p class="desc">Cada barra é uma fatura (mês de vencimento), dividida pelas 7 maiores categorias + outras</p>
-      <div id="chMes" style="height:400px"></div>
+      <h2>Gasto por fatura</h2><p class="desc">Cada barra é uma fatura (mês de vencimento), dividida em 8 grupos. Passe o mouse para ver as categorias de cada grupo</p>
+      <div id="chMes" style="height:420px"></div>
+    </div>
+    <div class="card full">
+      <h2>Ralos do dinheiro: gastos pequenos e repetidos</h2>
+      <p class="desc" id="raloInfo"></p>
+      <div class="tbl-wrap" style="max-height:420px"><table id="tblRalo"><thead><tr>
+        <th>Estabelecimento</th><th>Categoria</th><th class="num">Nº de compras</th><th class="num">Compras/mês</th>
+        <th class="num">Ticket médio</th><th class="num">Total</th><th class="num">Projeção 12 meses</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="card full">
       <h2>Categoria × mês</h2><p class="desc">Quanto mais escuro, mais gasto naquela categoria naquela fatura</p>
@@ -183,8 +190,18 @@ const ENC = 'Juros, multas e IOF';
 const totGeral = {};
 DADOS.lanc.forEach(l => totGeral[l.cat] = (totGeral[l.cat]||0) + l.v);
 const catsOrd = Object.keys(totGeral).sort((a,b) => totGeral[b]-totGeral[a]);
-const TOPCATS = catsOrd.slice(0, 7);
-const corCat = c => { const i = TOPCATS.indexOf(c); return i >= 0 ? css('--s'+(i+1)) : css('--other'); };
+// 8 grupos fixos (cada um com uma cor); nenhuma categoria cai num "outras" anônimo
+const GRUPOS = [
+  ['Supermercado', ['Supermercado']],
+  ['Trabalho, estudo e tecnologia', ['Assinaturas e tecnologia', 'Educação e cursos', 'Telefone e internet']],
+  ['Transporte e veículo', ['Veículo (manutenção/despachante)', 'Combustível', 'Transporte por app (99/Uber)']],
+  ['Saúde, beleza e pets', ['Saúde e farmácia', 'Beleza e cuidados pessoais', 'Pets']],
+  ['Comer fora e delivery', ['Padaria, lanches e restaurantes', 'Delivery (iFood)']],
+  ['Viagens', ['Viagens']],
+  ['Compras e casa', ['Compras (lojas, eletrônicos, vestuário)', 'Casa e construção']],
+  ['Pix a pessoas, juros e doações', ['Pessoas e Pix (a identificar)', 'Juros, multas e IOF', 'Doações, igreja e associações', 'Serviços e eventos']],
+];
+const grupoDe = c => (GRUPOS.find(g => g[1].includes(c)) || GRUPOS[7])[0];
 
 const fF = document.getElementById('fFatura'), fC = document.getElementById('fCat'), fB = document.getElementById('fBusca');
 fF.innerHTML = '<option value="">Todas as faturas</option>' + DADOS.faturas.map(f => `<option value="${f.venc}">${f.rot} (vence ${f.venc.split('-').reverse().join('/')})</option>`).join('');
@@ -199,7 +216,7 @@ const soma = (arr, k) => { const o = {}; arr.forEach(l => o[k(l)] = (o[k(l)]||0)
 
 function layoutBase(extra={}) {
   return Object.assign({
-    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', separators: ',.',
     font: {family: 'system-ui, sans-serif', size: 12, color: css('--text-secondary')},
     margin: {l: 10, r: 20, t: 10, b: 40},
     hoverlabel: {bgcolor: css('--surface-1'), bordercolor: css('--border'), font: {color: css('--text-primary')}},
@@ -234,7 +251,7 @@ function chCat(rows) {
     marker: {color: css('--s1'), line: {color: css('--surface-1'), width: 2}},
     text: o.map(e => brl0(e[1])), textposition: 'outside', cliponaxis: false,
     textfont: {color: css('--text-secondary')},
-    hovertemplate: '%{y}<br><b>%{x:$,.2f}</b><extra></extra>',
+    hovertemplate: '%{y}<br><b>R$ %{x:,.2f}</b><extra></extra>',
   }], layoutBase({xaxis: {visible: false}, yaxis: {automargin: true, color: css('--text-primary')}, margin: {l: 10, r: 70, t: 0, b: 0}, bargap: 0.3}), CFG);
 }
 
@@ -246,19 +263,23 @@ function chTop(rows) {
     marker: {color: css('--s1'), line: {color: css('--surface-1'), width: 2}},
     text: o.map(e => brl0(e[1])), textposition: 'outside', cliponaxis: false,
     textfont: {color: css('--text-secondary')}, customdata: o.map(e => catDe[e[0]]),
-    hovertemplate: '%{y}<br>%{customdata}<br><b>%{x:$,.2f}</b><extra></extra>',
+    hovertemplate: '%{y}<br>%{customdata}<br><b>R$ %{x:,.2f}</b><extra></extra>',
   }], layoutBase({xaxis: {visible: false}, yaxis: {automargin: true, color: css('--text-primary')}, margin: {l: 10, r: 70, t: 0, b: 0}, bargap: 0.3}), CFG);
 }
 
 function chMes(rows) {
   const fats = DADOS.faturas.map(f => f.venc);
-  const grupos = [...TOPCATS, 'Outras categorias'];
-  const g = l => TOPCATS.includes(l.cat) ? l.cat : 'Outras categorias';
-  const traces = grupos.map(c => {
-    const por = soma(rows.filter(l => g(l) === c), l => l.f);
-    return {type: 'bar', name: c, x: fats.map(f => rotFat[f]), y: fats.map(f => por[f]||0),
-      marker: {color: c === 'Outras categorias' ? css('--other') : corCat(c), line: {color: css('--surface-1'), width: 1}},
-      hovertemplate: `${c}<br>%{x}: <b>%{y:$,.2f}</b><extra></extra>`};
+  const traces = GRUPOS.map(([g, cats], i) => {
+    const doGrupo = rows.filter(l => grupoDe(l.cat) === g);
+    const por = soma(doGrupo, l => l.f);
+    const detalhe = fats.map(f => {
+      const pc = soma(doGrupo.filter(l => l.f === f), l => l.cat);
+      return Object.entries(pc).filter(e => Math.abs(e[1]) >= 0.01).sort((a,b) => b[1]-a[1])
+        .map(([c, v]) => `&nbsp;&nbsp;${c}: ${brl(v)}`).join('<br>');
+    });
+    return {type: 'bar', name: g, x: fats.map(f => rotFat[f]), y: fats.map(f => por[f]||0), customdata: detalhe,
+      marker: {color: css('--s'+(i+1)), line: {color: css('--surface-1'), width: 1}},
+      hovertemplate: `<b>${g}</b> · %{x}: <b>R$ %{y:,.2f}</b><br>%{customdata}<extra></extra>`};
   }).filter(t => t.y.some(v => v !== 0));
   const totais = fats.map(f => rows.filter(l => l.f === f).reduce((s,l) => s+l.v, 0));
   traces.push({type: 'scatter', mode: 'text', x: fats.map(f => rotFat[f]), y: totais, text: totais.map(brl0),
@@ -266,6 +287,23 @@ function chMes(rows) {
   Plotly.react('chMes', traces, layoutBase({barmode: 'relative', bargap: 0.35,
     legend: {orientation: 'h', y: -0.15, font: {color: css('--text-secondary')}},
     yaxis: {gridcolor: css('--grid'), tickprefix: 'R$ ', tickformat: ',.0f', automargin: true}, separators: ',.', margin: {l: 70, r: 10, t: 20, b: 10}}), CFG);
+}
+
+function ralos(rows) {
+  const nMeses = new Set(rows.map(l => l.f)).size || 1;
+  const compras = rows.filter(l => (l.tipo === 'compra' || l.tipo === 'pix_credito') && !l.parc && l.v > 0);
+  const pequenas = compras.filter(l => l.v < 50);
+  const totalP = pequenas.reduce((s,l) => s+l.v, 0), total = rows.reduce((s,l) => s+l.v, 0);
+  document.getElementById('raloInfo').innerHTML =
+    `Compras à vista abaixo de R$ 50: <b>${pequenas.length}</b> compras somando <b>${brl(totalP)}</b> `
+    + `(${(100*totalP/(total||1)).toFixed(0)}% do gasto, ~${brl(totalP/nMeses)}/mês). `
+    + `Abaixo, os lugares onde você compra 4 vezes ou mais (só compras à vista), ordenados pelo total.`;
+  const por = {};
+  compras.forEach(l => { const o = por[l.desc] ||= {n: 0, v: 0, cat: l.cat}; o.n++; o.v += l.v; });
+  const lst = Object.entries(por).filter(e => e[1].n >= 4).sort((a,b) => b[1].v - a[1].v);
+  document.querySelector('#tblRalo tbody').innerHTML = lst.map(([d, o]) => `<tr><td>${d}</td><td class="muted">${o.cat}</td>
+    <td class="num">${o.n}</td><td class="num">${(o.n/nMeses).toFixed(1)}</td><td class="num">${brl(o.v/o.n)}</td>
+    <td class="num"><b>${brl(o.v)}</b></td><td class="num">${brl(o.v/nMeses*12)}</td></tr>`).join('');
 }
 
 function chHeat(rows) {
@@ -276,7 +314,7 @@ function chHeat(rows) {
   const scale = [0, .1, .3, .55, .8, 1].map((p,i) => [p, css('--seq-'+i)]);
   Plotly.react('chHeat', [{
     type: 'heatmap', z, x: fats.map(f => rotFat[f]), y: cats, colorscale: scale, xgap: 2, ygap: 2,
-    hovertemplate: '%{y}<br>%{x}: <b>%{z:$,.2f}</b><extra></extra>',
+    hovertemplate: '%{y}<br>%{x}: <b>R$ %{z:,.2f}</b><extra></extra>',
     colorbar: {thickness: 10, outlinewidth: 0, tickprefix: 'R$ ', tickfont: {color: css('--text-secondary')}},
   }], layoutBase({xaxis: {side: 'top', color: css('--text-secondary')}, yaxis: {automargin: true, color: css('--text-primary')}, margin: {l: 10, r: 10, t: 30, b: 10}}), CFG);
 }
@@ -295,7 +333,7 @@ document.querySelectorAll('#tbl th').forEach(th => th.onclick = () => {
 
 function render() {
   const rows = filtrados();
-  kpis(rows); chCat(rows); chTop(rows); chMes(filtrados(true)); chHeat(filtrados(true)); tabela(rows);
+  kpis(rows); chCat(rows); chTop(rows); chMes(filtrados(true)); ralos(rows); chHeat(filtrados(true)); tabela(rows);
 }
 [fF, fC].forEach(e => e.onchange = render); fB.oninput = render;
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
