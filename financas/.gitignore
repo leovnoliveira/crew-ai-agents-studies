@@ -1,0 +1,6 @@
+# Dados financeiros pessoais NUNCA vão para o repositório (repo é público)
+data/
+output/
+*.pdf
+*.csv
+*.ofx

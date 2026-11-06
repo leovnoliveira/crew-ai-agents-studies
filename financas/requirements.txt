@@ -1,0 +1,6 @@
+pdfplumber>=0.11
+pandas>=2.2
+plotly>=5.20
+# OCR opcional (só para PDFs escaneados, sem camada de texto):
+# pytesseract>=0.3   + binário tesseract-ocr (com idioma "por")
+# pdf2image>=1.17    + binário poppler-utils
